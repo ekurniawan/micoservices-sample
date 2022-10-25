@@ -1,5 +1,6 @@
 package com.rapidtech.orderservice.service;
 
+import com.rapidtech.orderservice.dto.InventoryResponse;
 import com.rapidtech.orderservice.dto.OrderLineItemsDto;
 import com.rapidtech.orderservice.dto.OrderRequest;
 import com.rapidtech.orderservice.model.Order;
@@ -9,6 +10,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 
+import java.lang.reflect.Array;
+import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 
@@ -26,13 +29,20 @@ public class OrderService {
                 .map(this::mapToDto).toList();
         order.setOrderLineItemsList(orderLineItems);
 
+        List<String> skuCodes = order.getOrderLineItemsList().stream()
+                .map(OrderLineItems::getSkuCode).toList();
+
         //cek di bagian inventory
-        Boolean result = webClient.get().uri("http://localhost:7003/api/inventory")
+        InventoryResponse[] inventoryResponsesArr = webClient.get().uri("http://localhost:7003/api/inventory",
+                uriBuilder -> uriBuilder.queryParam("skuCode",skuCodes).build())
                 .retrieve()
-                .bodyToMono(Boolean.class)
+                .bodyToMono(InventoryResponse[].class)
                 .block();
 
-        if(result){
+        boolean allProductsInStock =
+                Arrays.stream(inventoryResponsesArr).allMatch(InventoryResponse::isInStock);
+
+        if(allProductsInStock){
             orderRepository.save(order);
         }else {
             throw new IllegalArgumentException("Stok Product tidak mencukupi....");
