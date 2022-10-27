@@ -3,6 +3,7 @@ package com.rapidtech.orderservice.service;
 import com.rapidtech.orderservice.dto.InventoryResponse;
 import com.rapidtech.orderservice.dto.OrderLineItemsDto;
 import com.rapidtech.orderservice.dto.OrderRequest;
+import com.rapidtech.orderservice.event.OrderPlacedEvent;
 import com.rapidtech.orderservice.model.Order;
 import com.rapidtech.orderservice.model.OrderLineItems;
 import com.rapidtech.orderservice.repository.OrderRepository;
@@ -10,6 +11,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cloud.sleuth.Span;
 import org.springframework.cloud.sleuth.Tracer;
+import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 import zipkin2.internal.Trace;
@@ -25,8 +27,7 @@ import java.util.UUID;
 public class OrderService {
     private final OrderRepository orderRepository;
     private final WebClient.Builder webClientBuilder;
-
-    private final Tracer tracer;
+    private final KafkaTemplate<String,OrderPlacedEvent> kafkaTemplate;
 
     public String placeOrder(OrderRequest orderRequest){
         Order order = new Order();
@@ -40,9 +41,8 @@ public class OrderService {
                 .map(OrderLineItems::getSkuCode).toList();
         log.info("Memanggil inventory service");
 
-        Span inventoryServiceLookup = tracer.nextSpan().name("InventoryServiceLookup");
-        try (Tracer.SpanInScope isLookup = tracer.withSpan(inventoryServiceLookup.start())){
-            inventoryServiceLookup.tag("call","inventory-service");
+
+
             //cek di bagian inventory
             InventoryResponse[] inventoryResponsesArr = webClientBuilder.build().get().uri("http://inventory-service/api/inventory",
                             uriBuilder -> uriBuilder.queryParam("skuCode",skuCodes).build())
@@ -55,11 +55,13 @@ public class OrderService {
 
             if(allProductsInStock){
                 orderRepository.save(order);
+                kafkaTemplate.send("notificationTopic",new OrderPlacedEvent(order.getOrderNumber()));
+
                 return "Order berhasil dilakukan...";
             }else {
                 throw new IllegalArgumentException("Stok Product tidak mencukupi....");
             }
-        }
+
     }
 
     private OrderLineItems mapToDto(OrderLineItemsDto orderLineItemsDto){
