@@ -2,10 +2,12 @@ package com.rapidtech.productservice.service;
 
 import com.rapidtech.productservice.dto.ProductRequest;
 import com.rapidtech.productservice.dto.ProductResponse;
+import com.rapidtech.productservice.event.OrderPlacedEvent;
 import com.rapidtech.productservice.model.Product;
 import com.rapidtech.productservice.repository.ProductRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -15,6 +17,7 @@ import java.util.List;
 @Slf4j
 public class ProductService {
     private final ProductRepository productRepository;
+    private final KafkaTemplate<String, OrderPlacedEvent> kafkaTemplate;
 
     public void createProduct(ProductRequest productRequest){
         Product product = Product.builder()
@@ -22,6 +25,7 @@ public class ProductService {
                 .description(productRequest.getDescription())
                 .price(productRequest.getPrice()).build();
         productRepository.save(product);
+        kafkaTemplate.send("notificationTopic",new OrderPlacedEvent("Product: - "+product.getId()+" "+product.getName()));
         log.info("Product {} is saved",product.getId());
     }
 
